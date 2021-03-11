@@ -1,5 +1,5 @@
 <template>
-  <h1>{{ msg.soso.ss }}</h1>
+  <!-- <h1>{{ msg.soso.ss }}</h1> -->
   <div>你好啊</div>
   <button @click="changeMsg">点我</button>
 </template>

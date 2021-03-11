@@ -1,0 +1,74 @@
+1. resolveComponent
+
+
+    1.1 resolveComponent对resolveAsset的封装,传入常量COMPONENTS,目前来看resolveDynamicComponent
+        resolveDirective 都是resolveAsset封装,传入不同的常量来进行区别
+
+2. resolveAsset
+
+   2.1  会走到Component分支 这里如果name === '_self' 将会直接return自己,目前看来不知道如何会有这种
+       情况,但是源码里的注释是说会代码编辑时自己推断,自行调用,( waitStudy 这里可能需要找找资料了)
+
+   2.2 然后会判断当前组件的name 是不是等于当前调用setup的组件name,如果是的话将会进行缓存,然后将当前
+       这个组件返回,(这里可能是组件递归时,需要进行测试)。
+
+   2.3 然后检查是否是当前实例,或者组件的export的对象上指是否存在指的(mixins,extends)是否有,如果没有
+       将会到组件实例的appContext上找,appContext是在执行createComponentInstance给当前组件实例上挂载的,
+       然后会一直引用rootComponents上vnode的appContext,也就是app上的appContext。
+       然后这样就会找到在全局注册的组件。
+       也就是为什么通过template生成的render方法里 _resolveComponent使用去寻找组件,因为一个页面有可能同一个组件
+       使用多次,所以resolveComponent进行缓存,下次再传入这个组件名称,将会直接返回,不会在进行mixins或者extends或者appContext上查找。
+
+
+3.  resolveDynamicComponent
+
+    3.1 如果在template的render使用动态组件是用  <component :is=''></component>
+         将会在render中使用resolveDynamicComponent来执行,
+
+    setup () {
+
+       let keyName = ref("test");
+
+        setTimeout(()=>{
+            keyName.value = "xx";
+        },1000)
+
+        return ()=>{
+            return h(resolveDynamicComponent(keyName.value))
+        }
+    }
+
+
+    3.2 但是在看其实源码上resolveDynamicComponent也是调用的resolveAsset 其实
+        resolveDynamicComponent === resolveComponent (个人理解,暂时没有发现什么不同)
+        也就是
+
+        setup () {
+
+            let keyName = ref("test");
+
+            setTimeout(()=>{
+                keyName.value = "xx";
+            },1000)
+
+            return ()=>{
+                return h(resolveComponent(keyName.value))
+            }
+         }
+
+         效果一样
+
+        vue2 手写render函数使用动态组件
+
+         data(){
+             return {
+                  this.componentsName = "acom"
+             }
+         }
+        return h(this.componentsName) // 这样来调用动态组件
+
+
+
+
+
+(waitStudy 需要进行研究的)
