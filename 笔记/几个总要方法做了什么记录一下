@@ -1,0 +1,26 @@
+processComponent 进行判断是执行mountComponent还是updateComponent方法
+
+
+mountComponent 核心调用方法有两个setupComponent,setupRenderEffect
+
+
+setupComponent 这里调用 initProps,initSlots (这两个在什么情况下起作用还没有研究)
+    然后调用了setupStatefulComponent
+
+
+setupStatefulComponent  这里主要是对Component的name还有子组件的name进行效验
+    然后调用当前组件上的setup方法,然后获得setup的返回值,接着调用handleSetupResult
+    其实handleSetupResult主要就是对setup的返回值进行proxy的代理并且解包
+
+
+
+setupRenderEffect 主要就是用响应式原理的核心库effect创建vue2中的watcher用来进行依赖收集
+        然后effect里调用render方法用来收集前面响应式属性的依赖。
+        然后调用patch,把数据渲染到视图。
+
+patch中 processElement 用来判断是挂载元素还是更新元素mountElement,patchElement
+
+
+renderComponentRoot 主要执行render方法,来创建vnodeTree,
+
+    然后在执行render时给子组件创建vnode对象,root的vnode在createApp调用mount时创建的rootVnode

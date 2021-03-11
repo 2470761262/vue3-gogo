@@ -1,0 +1,312 @@
+<template>
+<div>哦{{name}}哦</div>
+</template>
+
+<script>
+
+export default {
+  name: 'App',
+  components: {
+    HelloWorld
+  },
+  setup(){
+      debugger
+      return {
+          name:5
+      }
+  }
+}
+</script>
+
+vue3 最简单demo的流程源码解读。
+
+    不推荐直接阅读源码
+    首先需要对vue3的文档先进行一次阅读。
+    理解proxy 和 Reflect 的使用。
+    最好对vue3的响应式原理有一定理解。
+
+    有兴趣可以自行阅读vue3 响应式原理源码实现
+    npm i @vue/reactivity -D
+
+
+    开始正文
+
+
+
+1. 在调用了createApp时,调用了ensureRenderer返回createApp
+
+2. ensureRenderer 中创建了createRenderer 渲染器并且给这个方法传入了一些操作dom的公用函数
+
+3. createRenderer 直接返回一个了baseCreateRenderer 并且把之前传入的公用函数再次传给给这个方法
+
+4. baseCreateRenderer 里定义非常多的patch类的方法 比如基础patch
+
+        4.1 unmount processText mountElement mountChildren
+            patchElement unmountComponent render
+            mountComponent updateComponent 等等的方法 是在baseCreateRenderer 中的闭包定义.
+
+5. baseCreateRenderer 返回了一个createApp 对象, createApp是通过 createAppAPI执行返回的
+   给createAppAPI传入了两个参数一个render函数,hydrate 暂不知道有什么作用.但是在普通使用crateApp创建的
+   hydrate 是一个null 并没有传递给createAppAPI函数。其实只传递了一个render函数
+
+        5.1 render 函数
+            接收两个参数 一个vnode,一个dom实例如果没有传入vnode但是传递了dom实例,并且dom实例上有vnode这个对象
+            将会去调用unmount去进行卸载,发现子组件是没有一个可以自己主动卸载的方法。猜测可以使用这个方法来实现卸载
+            ( waitStudy: 具体使用之后再研究 )
+
+        5.2 如果vnode存在的情况,将会调用patch函数进行patch vnode.
+
+6. createAppAPI 并没有做任何别的操作,只是内部闭包创建了一个createApp函数，然后直接返回。
+
+7. 到此ensureRenderer 函数已经执行完成,然后通过createAppAPI返回了一个createApp函数,这个vue暴露出去的最开始入口的createApp没什么关系.
+   只是最外层的对这一整的包括名字是同一个。
+
+7. 然后调用ensureRenderer返回的createApp函数把一开始入口传入的参数传递给createApp
+   入口参数传递定义在main.js
+
+   7.1 import App from './App.vue'
+       createApp(App).mount('#app') 这里的App 就是传递内部createApp的参数,目前来看这个方法接收的是一个组件
+       那其实最外部暴露的 createApp 和 内部定义的 createApp 都是接收一个组件的字面量定义
+
+
+8 . 内部定义的createApp函数做了什么
+
+   8.1  首先接收一个组件的字面量描述,props对象, 在vue3 createApp 中的使用描述 是可以接收两个参数第一个参数是一个组件的字面量描述
+        第二个是props初始值的传递。
+
+        const app = createApp(
+            {
+                props: ['username']
+            },
+            { username: 'Evan' }
+        )
+
+    8.2 首先执行了createAppContext 这个方法直接返回了一个vue组件初始的字面量对象,以下为返回的初始对象
+
+        const NO = () => false;
+
+        {
+            app: null,
+            config: {
+                isNativeTag: NO, // 是一个只会返回false的方法
+                performance: false,
+                globalProperties: {},
+                optionMergeStrategies: {},
+                isCustomElement: NO,
+                errorHandler: undefined,
+                warnHandler: undefined
+            },
+            mixins: [],
+            components: {},
+            directives: {},
+            provides: Object.create(null)
+        };
+
+    8.3 设置了isMounted 为false .
+        之后,定义了一个对象,对象上有全局注册或者获取config的方法属性
+        use(这里已经能够知道,use是在哪定义的了)
+        mixin
+        components
+        mount unmount
+        provide
+
+        然后把这个对象给到了createAppContext返回的context对象上的app对象,然后把上面定义的对象这里也称呼为APP对象将其返回出去
+
+
+9.   之后就可以调用这个对象上的mount方法进行挂载到页面显示
+
+
+
+10.  mount做了什么?
+
+     10.1
+          其实这里的mount不是直接返回内部createApp返回的mount方法而是给这个方法在进行了一次包装类似使用之前的容错处理
+
+          如果传入的component不是方法是字面量对象时,同时没有render方法,和template 将会给这个组件对象上添加一个template
+          并且挂载dom的innerHtml给到template上。
+          并且把dom的innerHtml设置为空字符串,之后调用了内部createApp返回的mount方法
+
+
+     10.2 首先通过createVNode创建一个根的vnode对象 接收一个type参数(组件对象的字面量),props,childred 等,
+          但是在这个基础版本里只有type这个值
+
+          10.2.1 会判断传递的type是不是已经是一个vnode 如果是将会使用cloneVnode方法进行clone然后直接返回
+
+          10.2.2  对props上的属性进行标准化
+
+          10.2.3  定义了shapeFlag变量并且对type类型进行判断如果是Object类型  shapeFlag 将会是4
+
+          10.3.4  定义vnode对象 然后使用normalizeChildren 对象子节点初始化(这个版本childer所以
+                  方法直接跳过了,这里的children很可能是指slot,但是发现在给文本节点创建vnode时children是文本,
+                  不过那也是因为在render里显示的给
+
+                    _createVNode("div", null, "哦" + _toDisplayString($setup.name) + "哦", 1 /* TEXT */)
+
+                    传递childer就是文本 还需要比较细致的了解,
+                  )
+
+
+          10.3.5  createVNode 方法执行完毕 返回vnode对象
+
+          10.3.6  给返回的vnode对象上添加appContext 对象 context对象为 上面 8.2时创建的context对象 方便vnode直接拿到上下文
+                  (目前来看这里的vnode拿的是全局上下文,不知道之后的子组件vnode是否也是拿的全局上下文还是自己的上下文,在vue2中
+                  是拿的当前自己这个组件的实例的上下文)
+
+          10.3.7  执行render方法
+
+
+
+
+11 . mount中render方法做了什么?
+
+     render方法接收一个vnode和一个根节点的dom对象
+
+     这里render方法就是在5.1 中介绍的render方法这里传入了vnode 所以会走patch方法
+
+
+
+12. render中的patch做了什么?
+
+    12.1 patch是接收两个vnode,但是这里首次创建并且是根组件所以 vnode1是null
+         然后根据vnode中的type来判断类型进行patch到页面.这里的type是组件字面量对象.是在10.2 中createVNode时定义的
+
+    12.2 然后走到了switch 的default 中 根据 vnode中的shapeFlag值来判断如何创建dom对象 这里走的是processComponent方法
+         因为传递的就是app组件
+
+    12.3 processComponent 同样接收新旧vnode和dom实例 然后执行mountComponent  mountComponent只接收新的vnode 不需要接收
+         两个vnode 不过processComponent 这个函数如果新旧vnode都有传递
+         就会去执行updateComponent 函数
+         ( waitStudy: 组件更新时在研究 )
+
+
+13. mountComponent 做了什么 ( mountComponent 还添加了一些数据锚点,和对vite Hmr(热更新)的代码实现 这里不研究)
+
+    13.1 首先调用了createComponentInstance函数来创建组件实例 这个方法其实还接收父组件实例但是里这里没有
+    ( waitStudy: 父子组件时在研究 )
+
+    13.2 createComponentInstance 会根据有传入父组件实例就会用父组件的appContext 如果没有就用vnode组件自己的appContext
+         但是就目前来看就算传入的父组件那么父组件的AppContext是全局上下文,一直把全局上下文传递下去?,这里在之前玩vue3时没有注意
+         ( waitStudy: 父子组件时在研究 ) 在这里是把vnode自己身上的appContext给到当前这个组件实例上。
+         (endStudy: 其实是只有调用createAppAPI 才会通过createAppContext来注册appContext,之后的子组件
+         都是通过createComponentInstance,来创建组件实例,已经不会在调用createAppContext来创建上下文了,都是直接从父级上取的)
+
+    13.3 然后会对全局的props和emit事件进行初始化
+         这里会把 mixins上的props ,extends 上的props emit 进行合并
+         (waitStudy: 暂且不知道全局mixins和局部mixins这里的初始化有什么区别  有传递props和minxis时研究  )
+
+    13.4 然后给组件实例上添加了ctx对象 通过 Object.defineProperty代理写options版本上的使用方法
+         比如 $data ,$watch,$props,$nextTick,$forceUpdate,$parent ( waitStudy:这里方法在之后进行了解实现 )
+         再给组件实例上添加root 如果有父组件实例就把父组件root对象给到当前组件实例,如果没有root 等于 自己的实例
+         这里大概就是做父子组件关联。
+         然后给当前组件实例的emit方法使用bind进行函数柯里化, emit实现 (waitStudy:之后父子组件通讯是研究 )
+
+    13.5 createComponentInstance 已经执行完成,返回组件实例。
+
+
+    13.6 给当前vnode上添加component属性指向刚才创建的组件实例 让vnode和组件实例进行关联.
+
+    13.7 判断是否isKeepAlive 这里没有 (waitStudy: KeepAlive 时研究 )
+
+    13.8 然后调用重要方法setupComponent并且传入组件实例
+
+
+
+14 setupComponent 中做了什么? (waitStudy: 这里有对ssr的判断 之后研究ssr时在了解)
+
+    14.1 判断是否状态组件 这里就是4 , 4 好像就是状态组件, 还有其他类型, 比如创建组件时是还可以创建函数式组件
+
+    14.2 执行initProps 和 initSlots 这两个函数会对组件类型和 是否ssr进行不同的初始化 这里没有这些的
+         ( waitStudy:这两个函数在之后有porps和slots时研究)
+
+    14.3 执行setupStatefulComponent传递当前组件实例.
+
+
+15. setupComponent中的setupStatefulComponent 做了什么
+
+    15.1 这里会对组件实例上的name, 还有进行注册的子组件components上对象的key, 还有组件上注册的指令进行效验.
+
+    15.2 给组件实例上添加proxy对象 让proxy对象代理组件实例上的ctx上下文
+         从vue3的文档上看是可以在全局app的config.globalProperties 上挂载全局属性之后可以通过组件实例的proxy来获取
+         这里proxy代理ctx 那么就应该是globalProperties 上挂载的属性到了ctx,
+         比如挂载 $api ,挂载自定义组件 $notify 等等。 (waitStudy: 这里等挂载全局自定义属性时研究)
+
+    15.3 执行exposePropsOnRenderContext 好像是vue3新属性expose用于导出属性的方法(waitStudy: 不确定之后研究);
+
+    15.4 结构出组件实例的steup函数,并且将currentInstance指向当前实例
+         看来这里vue3暴露的getCurrentInstance()方法 就是获取的这个
+
+    15.5 执行 pauseTracking 反正就是一个堆栈队列的实现,但是存的又是true,在reactive 的effect中
+        也有个类似的方法叫 enableTracking 没太明白有什么用, 这个之后看心情了解把。
+        function enableTracking() {
+            trackStack.push(shouldTrack);
+            shouldTrack = true;
+        }
+
+    15.6 执行callWithErrorHandling 传入setpu函数  但是在执行前会判断当前是否是本地和开发
+         如果是本地会使用shallowReadonly 对props进行一次浅的readonly代理 线上的则不会进行代理
+         然后执行setup函数
+         (在里会判断setup的length如果大于1才会把context传递给setup,如果setup没有声明需要参数,
+         其实是不会给setpu传递上下文的,比如 props,attrs,emit,expose 这些都不会给setpu函数的)
+         并且把setup的返回值拿到 当拿到setpu的返回值判断是否是promose 这里的异步应该是只能用于新语法,
+         也就是script 上加上setup属性 <script setpu> 这样的才能写异步 如果是直接声明使用的setpu是不能写
+         异步的 (waitStudy: <script setpu> 具体是怎么实现的估计在vue-loader 中 之后研究),
+         之后调用handleSetupResult 传入组件实例和setpu的返回结果
+
+    15.7 handleSetupResult 会对返回结果在次判断类型 因为setpu是还可以返回方法,如果返回的是方法将为作为render
+         方法来使用。
+
+    15.8 我这里是返回的一个对象,然后对setpu的返回对象进行proxy代理 如果是proxy就进行Proxy的代理解包,这就是为什么
+         在模板里不用写.value 在setpu需要写.value 是在这里做的 ,如果不是proxy 也就是普通对象了,在我这里是普通对象
+         ,就不代理了.
+
+
+    15.9 exposeSetupStateOnRenderContext 好像这里是对setpu的 expose实现,前面的 expose 是对 optionsApi的实现。
+         不愧是尤大要兼容两种写法.不过这里是不是实现expose新特性,还未知(waitStudy:之后研究)
+
+    15.10 执行finishComponentSetup方法 判断实例上是否有render方法 也就是不光可以在setpu里面写render
+          也可以单独在外面写render,如果没有render 也就是使用template 转换的render方法给到组件实例上的render属性上
+
+          instance.render = (Component.render || NOOP);
+
+
+    15.11 执行vue applyOptions vue2 和vue3的语法兼容 applyOptions
+          (waitStudy： 这个方法之后可以重点看下,简单看了一下貌似vue2 options初始化工作都是在这里进行的);
+
+          handleSetupResult 方法执行完成
+
+          setupStatefulComponent 方法也执行完成
+
+          setupComponent 方法也执行完成 此时再次回到 13. mountComponent方法
+
+          然后调用setupRenderEffect 方法 开始进入最后步骤挂载到页面
+
+
+16 setupRenderEffect
+
+    16.1   这里会通过响应式原理的核心方法effect给组件实例上创建update方法,也是在这里让视图和数据之前产生联系,也就是vue2
+           中的renderWatcher和Dep互相产生依赖,如果setup返回数据是proxy代理的响应式数据,这里的effect就会获取到返回的响应式。
+           也会在effect的dep中添加响应式依赖,响应式数据也会添加effect的依赖。
+
+    16.2   执行renderComponentRoot 中根据shapeFlag 判断 通过normalizeVNode 调用render创建一个template和setup
+           数据已经结合的vnode(waitStudy： 通过的normalizeVNode实现 之后可以了解)
+
+    16.3   然后在回到effect的回调中进入patch方法 把刚才生成的vnode传入最终执行到
+            mountElement方法中通过hostCreateElement 创建节点,hostSetElementText创建text文本
+            然后会给这个刚刚创建的真实dom上把组件的实例和vnode实例添加上去 属性名称分别叫
+            __vnode,__vueParentComponent,然后通过hostInsert 将dom添加到界面上,
+            到此现在页面已经显示出了内容。
+
+    16.4   其实在effect的回调用有发现去执行bm,m,这个数组,其实这里bm,m,
+           ,就是挂载之前和挂载完成的生命周期函数数组,但是还不知道components Api
+           的生命周期是怎么进行注册的
+           (endStudy 查看生命周期函数笔记)
+
+    16.5   到此已经结束(waitStudy：但是生命周期函数的调用还没有发现,之后研究)
+
+
+
+
+
+
+(waitStudy 需要进行研究的)
+(endStudy  已解决)

@@ -1,0 +1,4 @@
+1.     handleSetupResult中这里不光给setup的返回值进行了解包然后挂载到了组
+       件实例上setupState,还会把setupState给代理到组件实例上的ctx,也就是说
+       可以在ctx获取到setup的返回值,也可以在组件实例上的setupState获取到setup返回值
+       但是有点非常重要,只有在本地环境才会把setupState挂载到ctx上。重点重点

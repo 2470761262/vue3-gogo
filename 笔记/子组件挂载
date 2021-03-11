@@ -1,0 +1,105 @@
+1. 子组件vnode创建
+
+    1.走到render的时候还没有发现有什么不同,可以参考之前最基础版本笔记,不过在render函数中
+     const _component_HelloWorld = _resolveComponent("HelloWorld")
+    return (_openBlock(), _createBlock("div", null, [
+        _createVNode("div", null, "哦" + _toDisplayString($setup.name) + "哦", 1 /* TEXT */),
+        _createVNode(_component_HelloWorld),
+        _createVNode("div", null, "哦" + _toDisplayString($setup.name) + "哦", 1 /* TEXT */)
+    ]))
+
+    1.2 组件被解析为_createVNode(_component_HelloWorld)
+        而且发现组件是通过_resolveComponent来引入对应的组件(waitStudy: 之后再对这创建异步组件,组件
+        工厂这些函数了解时研究)
+
+    1.3 这里createVNode和基础版本流程是一样的,因为root组件也是组件
+
+    1.4 不过在createVNode 中发现normalizeChildren如果children是方法的话,就会当做slot来解析
+
+    1.5  上面的这个render执行是因为数组里面就是已经调用的方法,比如
+         function say(){
+            return 1;
+         }
+
+         let a = [say(),say(),say()] 那么a最后就是[1,1,1]这样的数组
+         所以上面的也最后把里面的vnode创建完成之后再创建最外城的vnode
+
+         在createVNode如果children是一个数组将会把shapeFlag设置为17;
+
+    1.6  到这里render方法走完了,子组件的vnode对象和子节点的vnode对象都创建完成了,然后把这个数组给到patch去挂载
+
+
+2.子组件patch
+
+        在这里发现一个和最初版的差异
+
+        <template>
+               <div>哦{{name}}哦</div>
+        </template>
+
+        到这里vnode的shapeFlag是9,同时childer就是  哦35哦
+        如果是9,(这里变成9的条件应该是只能是字符串)就会直接走hostSetElementText
+
+        但是在这版中
+
+        <template>
+            <div>
+                <div>哦{{ name }}哦</div>
+                <HelloWorld></HelloWorld>
+                <div>哦{{ name }}哦</div>
+            </div>
+        </template>
+
+        vnode的shapeFlag是17上面已经接受,childer为数组
+        数组走mountChildren
+
+        (
+            还要测试
+            <template>
+                <-- 这里就直接是组件的情况是什么样的  -->
+             </template>
+        )
+
+3.mountChildren 中做了什么mountChildren
+
+
+    3.1 首先循环childer数组开始patch每一个元素,下面开始流程分析
+
+    3.2 首先我们的第一个节点是普通节点,然后调用patch时把vnode传入还有父节点传入。
+        因为是mountChildren所以这里是没有传入ordVnode只传入newVnode,
+        这个vnode的shapeFlag是9所以走的processElement,然后调用hostInsert把这个创建好的
+        元素添加到父元素上,这里的流程可以参考最基础笔记中(16.3的流程)
+
+    3.3 第一次循环已经结束,开始进行第2次patch,这里这个时候childer是子组件了
+        因为是对象,所以shapeFlag是4,(其实这里已经知道是开始递归挂载元素和子节点了),
+        然后调用processComponent (这里可以参考最基础笔记中12.3的流程)
+
+        processComponent -->
+        mountComponent --> (setupComponent --> setupRenderEffect) 然后调用effect方法,
+        在调用redner收集依赖然后在走patch ,patch里面根据当前childer的shapeFlag确定是是调用哪个方法
+        如果是9就走processElement --> mountElement 如果可以直接挂载text就走hostSetElementText 如果是数组就走
+        mountChildren 然后再走patch patch里可能有有子组件然后开始递归
+
+        组件17就又走processComponent 最后到setupRenderEffect 中的patch中又开始根据vnode的shapeFlag判断
+        是走processElement 还是 processComponent
+
+    3.4 重复这个文档的3.2.
+
+    3.5 到这里已经挂载完成了.其实这里有个非常重要的点,比如父组件里面肯定是先调用effect然后收集依赖,
+        然后这时候走到子组件,然后子组件又走到子组件的effect,那么父组件会收集到子组件setup里的依赖吗?
+        其实是不会的,我在观看vue3响应式原理核心库源码的的时候发现,嵌套effect,外层effect是不会收集到内部
+        effect的依赖,就跟渲染组件实例一样这里是一直只会有一个,当发现有其他effect要执行时,会把当前的这个effect
+        添加到一个堆栈的队列,等这个执行完成之后,在把前一个没有执行完成的在pop出来。其实这里还是跟vue2的watcher
+        实现有点类似的,(难道跟写作文一样 文风写法固定之后是差多的?)
+
+    3.6 然后其实这里已经知道父组件响应式属性改变,是如何改变的子组件,比如父组件的定义了一个ref然后通过props传递给
+        子组件,这里ref通过setup包装,然后传递给了子组件,然后子组件在effect调用,这样子组件的effect就拿到了父组件
+        响应式属性的依赖,从而父组件修改属性触发子组件effect重新patch,(waitStudy 这里还需要对props的初始化进行研究)
+
+    3.6 那么父子组件的生命周期流程也就出来了,一开始走的父的beforeMount 等子beforeMount 和Mount走完再走父的Mount
+
+    3.7 还有一点值得注意就是父子组件实例上的关联是在mountComponent中createComponentInstance这里关联上的,
+        因为有给这个方法把当前的父组件实例传递给这方法,然后创建子组件实例把父组件实例添加到parent属性上.
+
+    3.8 还有一个有意思的点是所有的子节点都可以在childre里面找到,如果是这个节点里面有响应式属性则在dynamicChildren找的到.
+

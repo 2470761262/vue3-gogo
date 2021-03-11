@@ -1,0 +1,71 @@
+1. 从父组件调用render方法创建vnode开始
+
+   1.1 _createVNode 发现如果props这个对象是proxy的话,就会对props进行一次浅clone,assign来克隆
+        但是暂时还不知道如何让props就是一个proxy对象,它不会管里面的属性是不是proxy
+        但是如果style是proxy的话,也会进行一次浅克隆
+
+   1.2  (这里不知道其含义) 在createComponentInstance中有对props效验执行的这个方法normalizePropsOptions
+        (在这个方法中这里有对optionsApi的mixins,extends 做处理)
+        最后把效验结果添加到组件实例的propsOptions属性上,发现
+        在对props效验时,还有对props里的key做缓存,暂不知这里的缓存在什么情况下有效果,(难道是在手写render方法时,
+        动态传入props?,毕竟template里props属性基本是固定的)
+
+   1.3  initProps 在setupComponent中的initProps中执行setFullProps 把propsOptions中props中的属性解构出来,然后在vnode的
+        props里取出然后赋值给
+
+   1.4  initProps 然后执行validateProps在这里貌似才是真真的验证,首先如果值是null就不会执行之后的验证,如果是有值的情况下,
+        就会去验证,是不是必填,类型效验,自定义效验函数。
+
+   1.5  然后发现在把props真正挂载到组件实例的props属性上时,如果不是ssr就会给props进行一次shallowReactive,不知道为什么要
+        进行一次浅代理,我把这个代理代码给删除了,其实也没问题,不知道其作用是什么;
+        但是其实好像是像ref这样的值传递,在传递给值组件时其实已经只剩下值传递了,比如 var a = ref(5);
+        给到createVnode的时候经过解包就是直接传递的5这个值,此时已经失去了响应式效果,然后在通过shallowReactive进行浅的代理
+        让其恢复响应式,但是这里不知道这种值传递是怎么通过父组件更新,让子组件更新的了,应为像reactive这种创建的对象解包的话,就是对象
+        下面还是对象在解构的时候还是能有响应式的。
+
+
+
+
+2. 这里我开始看了下更新的流程
+
+   2.1 先用父更新子首先暴露出去的ref是有和effect关联上的,然后依据isMounted已经是true 所以走到 effect的false方法
+        然后通过走到renderComponentRoot把当前更新的组件实例传入然后再次调用render方法,重新生成行的vnode树
+         然后获取之前的组件实例上的subTree
+
+   2.2  这里就有了新的vnode和ordvnode然后开始patch 这的patch有点绕(waitStudy 之后重点研究更新过程在研究)
+        最后是发现存在dynamicChildren 调用的patchBlockChildren 开始循环patch更新组件,然后也是重新生成组件实例
+        是直接把老的vnode组件实例给到新vnode的组件实例, 然后走到子组件的effect上,在这里组件实例是老的但是这个老的组件
+        实例上有一个next这个是新的vnode然后再走patch更新界面
+        不过经过我测试,确实reactive的创建的响应式对象会拿到父子的effect,还有有意思的一点
+         let k =  reactive({
+            soso:{
+                xx:5
+            }
+         });// Trigger
+         直接{{k}} 父组件居然有effect有5的dep 其实最多2个这里其他的几个是toJson啊什么的也会触发Track将其添加到effect的dep里
+         如果是{{k.soso.xx}} 这样去显示 那effect的deps是对的 2个,但是不知道同样给到子组件,子组件也这样显示还是会有3个deps
+
+
+
+3. emits同样实在createComponentInstance创建实例中通过normalizeEmitsOptions创建事件,这里也会去继承extends的和mixins的。
+
+    3.1 然后在创建实例最后给emit属性使用bind绑定emit触发函数(柯里化)
+
+    3.2 在调用emit方法时,这时候会执行到最开始给emit属性绑定的emit函数,然后拿出实例上的emitOptions(其实就是emits),然后根据接入的逻辑
+        进行效验,这是在是方法的情况下.验证出错抛出一个警告,但是不会终止运行,也就是说
+
+        执行了父组件的那个监听方法,然后这个方法里有修改传递给子组件的props值,这里还是会修改这个响应式值,并且触发子组件更新
+
+
+    3.3 然后会解析这次处罚的事件,也就是eventName,包不包含已update: 为开头的字符串,如果是就是为v-model:xx 这样的去做准备
+
+    3.4 比如父组件@change 声明监听事件,然后会在子组件的vnode中在props里解析成onChange为key,然后存放的就是父组件的方法(@change="xxchange")
+        也就是xxchange, 最后在子组件的vnode中
+        props:{
+            onChange:xxchange(这个方法)
+        }
+
+    3.5 然后通过callWithAsyncErrorHandling 执行xxchange方法 如果子组件 写成这样
+         <HelloWorld :msg="k" @change="change" @change="change"></HelloWorld>
+
+         这里在通过callWithAsyncErrorHandling执行回调的时候是会是一个数组,然后循环调用

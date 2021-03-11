@@ -1,0 +1,66 @@
+1. 生命周期函数进行注册的
+
+   1.1 其实是在执行setup时调用的onMounted,onUnmounted,onBeforeMount等等这些生命周期函数,
+       但是并不是直接执行,而是执行的createHook 里的injectHook 方法在这里进行注册
+
+   1.2 injectHook会获取当前组件实例,实例是获取的全局currentInstance实例,这里给currentInstance赋值是在
+       setupStatefulComponent方法里进行赋值.setupStatefulComponent的介绍在(基础笔记里,15小结中)
+
+   1.3 当前这个生命周期是不是已经有注册的函数了,如果一个都没有就添加一个数组,把当前当前注册的的这个函数添加进去
+        这里是调用的函数最终注册到实例的对应属性说明
+        onBeforeMount --> bm
+        onMounted --> m
+        onBeforeUpdate --> onBeforeUpdate
+        onUpdated --> u
+        onBeforeUnmount --> bum
+        onUnmounted --> um
+        onRenderTriggered --> rtg
+        onRenderTracked --> rtc
+        onErrorCaptured --> ec
+
+    1.4 当然这也是为什么需要在setup中调用,因为不在这调用,给组件实例挂载不到正确的生命周期钩子
+
+
+
+2. 流程挂载时执行的生命周期(暂时不考虑keepalive的生命周期)
+
+   2.1 虽然setup不在生命周期的列表里,但是也可以理解为一个生命周期。
+       setup是在setupStatefulComponent 中的 callWithErrorHandling 调用的
+
+   2.2 effect中执行onBeforeMount的钩子函数
+
+   2.3 判断props属性上是否有onVnodeBeforeMount 这个暂时还不知道做什么的(waitStudy 之后研究)
+
+   2.4 在renderComponentRoot 中执行render方法
+
+   2.5 queuePostRenderEffect这个函数,本以为是执行onMounted因为在effect中判断M是否存在和bm类似
+       但是其实不是,暂时不知道这里做什么的(waitStudy 有可能是Suspense这个组件)
+
+   2.6 在最开是app.mount -->render 里执行flushPostFlushCbs这里执行了onMounted函数钩子
+       这里不知道是什么时候把onMounted 里的队列添加到 pendingPostFlushCbs中的,然后去重同时还排序(不知道为什么要排序)
+       然后逐一调用回调函数然后把pendingPostFlushCbs清空.
+
+
+   2.7 然后render方法结束
+
+
+   2.8 setup  -->  onBeforeMount -->  render --> onMounted
+
+
+
+
+3. 更新流程在组件更新时补充(waitStudy)
+   在effect中会首先执行onBeforeUpdate
+
+
+
+
+
+
+(waitStudy 需要进行研究的)
+
+
+
+
+
+
